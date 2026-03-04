@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "task_arn": "arn:aws:datasync:us-east-1:123456789012:task/task-0123456789abcdef0",
+      "task_name": "dxb-to-us-east-transfer",
+      "task_region": "us-east-1",
+      "created_at": "2026-03-03T22:30:15Z",
+      "task_execution_arn": "arn:aws:datasync:us-east-1:123456789012:execution/task-0123456789abcdef0/exec-aabbccdd",
+      "execution_started_at": "2026-03-03T22:30:20Z",
+      "source": {
+        "bucket": "my-dxb-source-bucket",
+        "region": "me-central-1",
+        "location_arn": "arn:aws:datasync:me-central-1:123456789012:location/loc-0a1b2c3d4e5f6g7h8",
+        "role_arn": "arn:aws:iam::123456789012:role/DataSyncS3Role-my-dxb-source-bucket-source",
+        "role_created": true
+      },
+      "destination": {
+        "bucket": "my-us-destination-bucket",
+        "region": "us-east-1",
+        "location_arn": "arn:aws:datasync:us-east-1:123456789012:location/loc-9i8h7g6f5e4d3c2b1",
+        "role_arn": "arn:aws:iam::123456789012:role/DataSyncS3Role-my-us-destination-bucket-dest",
+        "role_created": true
+      },
+      "throughput_mbps": 250
+    },
+    {
+      "task_arn": "arn:aws:datasync:eu-west-1:123456789012:task/task-fedcba9876543210f",
+      "task_name": "dxb-to-eu-west-transfer",
+      "task_region": "eu-west-1",
+      "created_at": "2026-03-03T22:35:42Z",
+      "source": {
+        "bucket": "another-dxb-bucket",
+        "region": "me-central-1",
+        "location_arn": "arn:aws:datasync:me-central-1:123456789012:location/loc-1a2b3c4d5e6f7g8h9",
+        "role_arn": "arn:aws:iam::123456789012:role/DataSyncS3Role-another-dxb-bucket-source",
+        "role_created": true
+      },
+      "destination": {
+        "bucket": "eu-destination-bucket",
+        "region": "eu-west-1",
+        "location_arn": "arn:aws:datasync:eu-west-1:123456789012:location/loc-9h8g7f6e5d4c3b2a1",
+        "role_arn": "arn:aws:iam::123456789012:role/MyCustomDestRole",
+        "role_created": false
+      },
+      "throughput_mbps": 100
+    }
+  ]
+}
