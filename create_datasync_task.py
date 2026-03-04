@@ -157,7 +157,7 @@ def validate_csv_format(file_path):
     Validate CSV file format and return list of task configurations.
     
     Required columns: source_bucket, dest_region
-    Optional columns: source_region, dest_bucket, throughput_mbps, source_role_arn, dest_role_arn, task_name, start, log_level
+    Optional columns: source_region, dest_bucket, throughput_mbps, source_role_arn, dest_role_arn, task_name, log_level, include_filter
     
     Returns:
         List of dictionaries with task configurations
@@ -167,7 +167,7 @@ def validate_csv_format(file_path):
     """
     required_columns = {'source_bucket', 'dest_region'}
     optional_columns = {'source_region', 'dest_bucket', 'throughput_mbps', 'source_role_arn', 'dest_role_arn', 
-                       'task_name', 'start', 'log_level'}
+                       'task_name', 'log_level', 'include_filter'}
     valid_columns = required_columns | optional_columns
     
     try:
@@ -202,15 +202,6 @@ def validate_csv_format(file_path):
                     if not normalized_row.get(col):
                         raise ValueError(f"Row {row_num}: '{col}' cannot be empty")
                 
-                # Convert boolean fields
-                if normalized_row.get('start'):
-                    val = normalized_row['start'].lower()
-                    if val not in ('true', 'false', '1', '0', 'yes', 'no'):
-                        raise ValueError(f"Row {row_num}: 'start' must be true/false/yes/no/1/0")
-                    normalized_row['start'] = val in ('true', '1', 'yes')
-                else:
-                    normalized_row['start'] = False
-                
                 # Convert throughput to int if provided
                 if normalized_row.get('throughput_mbps'):
                     try:
@@ -232,6 +223,15 @@ def validate_csv_format(file_path):
                     normalized_row['log_level'] = log_level
                 else:
                     normalized_row['log_level'] = DEFAULT_LOG_LEVEL
+                
+                # Validate include_filter if provided
+                if normalized_row.get('include_filter'):
+                    filter_val = normalized_row['include_filter']
+                    # Basic validation: must start with / and contain valid filter pattern
+                    if not filter_val.startswith('/'):
+                        raise ValueError(f"Row {row_num}: 'include_filter' must start with '/' (e.g., '/test/*')")
+                    if len(filter_val) < 2:
+                        raise ValueError(f"Row {row_num}: 'include_filter' must have a pattern after '/'")
                 
                 tasks.append(normalized_row)
             
@@ -390,13 +390,14 @@ def create_s3_location(client, bucket_name, region, role_arn, location_type):
         raise
 
 
-def start_datasync_task(task_arn, region):
+def start_datasync_task(task_arn, region, include_filter=None):
     """
     Start a DataSync task execution.
     
     Args:
         task_arn: DataSync task ARN
         region: AWS region where task is located
+        include_filter: Optional include filter pattern (e.g., '/test/*')
     
     Returns:
         Task execution ARN if successful, None otherwise
@@ -404,8 +405,15 @@ def start_datasync_task(task_arn, region):
     client = boto3.client('datasync', region_name=region, config=BOTO3_CONFIG)
     
     print("Starting task execution...")
+    if include_filter:
+        print(f"  Using include filter: {include_filter}")
+    
     try:
-        response = client.start_task_execution(TaskArn=task_arn)
+        params = {'TaskArn': task_arn}
+        if include_filter:
+            params['Includes'] = [{'FilterType': 'SIMPLE_PATTERN', 'Value': include_filter}]
+        
+        response = client.start_task_execution(**params)
         task_execution_arn = response['TaskExecutionArn']
         print(f"✓ Started task execution: {task_execution_arn}\n")
         print(f"  You can monitor task progress via the DataSync console or by running\n")
@@ -415,13 +423,18 @@ def start_datasync_task(task_arn, region):
         print(f"⚠ Failed to start task execution: {e}", file=sys.stderr)
         print("  Task created successfully but may not have been started.")
         print(f"\n  To start manually, run:")
-        print(f"  aws datasync start-task-execution --task-arn {task_arn} --region {region}\n")
+        if include_filter:
+            print(f"  aws datasync start-task-execution --task-arn {task_arn} --region {region} \\")
+            print(f"    --includes FilterType=SIMPLE_PATTERN,Value={include_filter}\n")
+        else:
+            print(f"  aws datasync start-task-execution --task-arn {task_arn} --region {region}\n")
         return None
 
 
 def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region, throughput_mbps, 
                          source_role_arn=None, dest_role_arn=None, task_name=None, 
-                         output_file=None, start_task=False, log_level=DEFAULT_LOG_LEVEL):
+                         output_file=None, start_task=False, log_level=DEFAULT_LOG_LEVEL, 
+                         include_filter=None):
     """
     Create an enhanced DataSync task with throughput limits.
     
@@ -437,6 +450,7 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
         output_file: Path to JSON file for saving task information
         start_task: If True, automatically start the task execution
         log_level: CloudWatch logging level (OFF, BASIC, or TRANSFER)
+        include_filter: Optional include filter pattern for task execution (e.g., '/test/*')
     
     Returns:
         Tuple of (task_arn, task_info_dict)
@@ -553,7 +567,7 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
     # Start task execution if requested
     task_execution_arn = None
     if start_task:
-        task_execution_arn = start_datasync_task(task_arn, dest_region)
+        task_execution_arn = start_datasync_task(task_arn, dest_region, include_filter)
     
     # Build task info for registry
     task_info = {
@@ -649,10 +663,23 @@ def main():
     parser.add_argument(
         '--start',
         action='store_true',
-        help='Automatically start the task execution after creation'
+        help='Start task execution after creation. Mutually exclusive with --test-mode.'
+    )
+    parser.add_argument(
+        '--test-mode',
+        action='store_true',
+        help='Start task execution with include filter from CSV. Mutually exclusive with --start.'
+    )
+    parser.add_argument(
+        '--include-filter',
+        help='Include filter pattern for single task execution (e.g., /test/*). Only used with --start flag.'
     )
     
     args = parser.parse_args()
+    
+    # Validate mutually exclusive options
+    if args.start and args.test_mode:
+        parser.error("--start and --test-mode are mutually exclusive. Use only one.")
     
     # Determine if using CSV or command-line args
     if args.csv_file:
@@ -675,6 +702,17 @@ def main():
             print(f"Processing task {idx}/{len(tasks)}")
             print(f"{'='*60}")
             
+            # Determine if task should be started and with what filter
+            start_task = args.start or args.test_mode
+            include_filter = None
+            
+            if args.test_mode:
+                if task_config.get('include_filter'):
+                    include_filter = task_config['include_filter']
+                    print(f"🧪 Test mode - using include filter: {include_filter}\n")
+                else:
+                    print(f"⚠️  Test mode enabled but no include_filter in CSV for this task\n")
+            
             try:
                 task_arn, task_info = create_datasync_task(
                     source_bucket=task_config['source_bucket'],
@@ -686,8 +724,9 @@ def main():
                     dest_role_arn=task_config.get('dest_role_arn'),
                     task_name=task_config.get('task_name'),
                     output_file=args.output_file,
-                    start_task=task_config['start'],
-                    log_level=task_config['log_level']
+                    start_task=start_task,
+                    log_level=task_config['log_level'],
+                    include_filter=include_filter
                 )
                 
                 registry = add_task_to_registry(registry, task_info)
@@ -713,6 +752,19 @@ def main():
         if not args.source_bucket or not args.dest_region:
             parser.error("--source-bucket and --dest-region are required (or use --csv-file)")
         
+        # Validate include-filter if provided
+        if args.include_filter:
+            if not args.start:
+                parser.error("--include-filter can only be used with --start")
+            if not args.include_filter.startswith('/'):
+                parser.error("--include-filter must start with '/' (e.g., /test/*)")
+            if len(args.include_filter) < 2:
+                parser.error("--include-filter must have a pattern after '/'")
+        
+        # test-mode is only for CSV
+        if args.test_mode:
+            parser.error("--test-mode can only be used with --csv-file")
+        
         registry = load_task_registry(args.output_file)
         
         try:
@@ -728,7 +780,8 @@ def main():
                 task_name=args.task_name,
                 output_file=args.output_file,
                 start_task=args.start,
-                log_level=args.log_level
+                log_level=args.log_level,
+                include_filter=args.include_filter if args.start else None
             )
             
             # Add to registry and save
@@ -750,3 +803,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
