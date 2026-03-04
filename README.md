@@ -19,6 +19,7 @@ Auto-create destination bucket and all resources:
 ```bash
 python create_datasync_task.py \
     --source-bucket my-bucket \
+    --source-region me-central-1 \
     --dest-region us-east-1
 ```
 
