@@ -43,6 +43,7 @@ BOTO3_CONFIG = Config(retries={'max_attempts': 10, 'mode': 'standard'})
 DEFAULT_THROUGHPUT_MBPS = 100
 DEFAULT_OUTPUT_FILE = "datasync_tasks.json"
 DEFAULT_SOURCE_REGION = "me-central-1"
+DEFAULT_LOG_LEVEL = "BASIC"
 
 
 def generate_dest_bucket_name(source_bucket, dest_region):
@@ -156,7 +157,7 @@ def validate_csv_format(file_path):
     Validate CSV file format and return list of task configurations.
     
     Required columns: source_bucket, dest_region
-    Optional columns: source_region, dest_bucket, throughput_mbps, source_role_arn, dest_role_arn, task_name, start
+    Optional columns: source_region, dest_bucket, throughput_mbps, source_role_arn, dest_role_arn, task_name, start, log_level
     
     Returns:
         List of dictionaries with task configurations
@@ -166,7 +167,7 @@ def validate_csv_format(file_path):
     """
     required_columns = {'source_bucket', 'dest_region'}
     optional_columns = {'source_region', 'dest_bucket', 'throughput_mbps', 'source_role_arn', 'dest_role_arn', 
-                       'task_name', 'start'}
+                       'task_name', 'start', 'log_level'}
     valid_columns = required_columns | optional_columns
     
     try:
@@ -222,6 +223,15 @@ def validate_csv_format(file_path):
                 # Set default source region if not provided
                 if not normalized_row.get('source_region'):
                     normalized_row['source_region'] = DEFAULT_SOURCE_REGION
+                
+                # Validate and set log level
+                if normalized_row.get('log_level'):
+                    log_level = normalized_row['log_level'].upper()
+                    if log_level not in ('OFF', 'BASIC', 'TRANSFER'):
+                        raise ValueError(f"Row {row_num}: 'log_level' must be OFF, BASIC, or TRANSFER")
+                    normalized_row['log_level'] = log_level
+                else:
+                    normalized_row['log_level'] = DEFAULT_LOG_LEVEL
                 
                 tasks.append(normalized_row)
             
@@ -411,7 +421,7 @@ def start_datasync_task(task_arn, region):
 
 def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region, throughput_mbps, 
                          source_role_arn=None, dest_role_arn=None, task_name=None, 
-                         output_file=None, start_task=False):
+                         output_file=None, start_task=False, log_level=DEFAULT_LOG_LEVEL):
     """
     Create an enhanced DataSync task with throughput limits.
     
@@ -426,6 +436,7 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
         task_name: Optional task name
         output_file: Path to JSON file for saving task information
         start_task: If True, automatically start the task execution
+        log_level: CloudWatch logging level (OFF, BASIC, or TRANSFER)
     
     Returns:
         Tuple of (task_arn, task_info_dict)
@@ -443,7 +454,8 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
     print(f"   Source: s3://{source_bucket} ({source_region})")
     print(f"   Destination: s3://{dest_bucket} ({dest_region})")
     print(f"   Task region: {dest_region}")
-    print(f"   Throughput limit: {throughput_mbps} Mbps\n")
+    print(f"   Throughput limit: {throughput_mbps} Mbps")
+    print(f"   CloudWatch logging: {log_level}\n")
     
     # Track whether roles were created
     source_role_created = False
@@ -492,6 +504,11 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
     # Add throughput limit (bandwidth limit in bytes/second)
     throughput_bytes_per_sec = throughput_mbps * 1024 * 1024 // 8
     task_params['Options']['BytesPerSecond'] = throughput_bytes_per_sec
+    
+    # Add CloudWatch logging level
+    if log_level and log_level != 'OFF':
+        task_params['Options']['LogLevel'] = log_level
+        print(f"  CloudWatch logging enabled: {log_level}")
     
     if task_name:
         task_params['Name'] = task_name
@@ -558,7 +575,8 @@ def create_datasync_task(source_bucket, source_region, dest_bucket, dest_region,
             "role_arn": dest_role_arn,
             "role_created": dest_role_created
         },
-        "throughput_mbps": throughput_mbps
+        "throughput_mbps": throughput_mbps,
+        "log_level": log_level
     }
     
     # Add execution ARN if task was started
@@ -604,6 +622,12 @@ def main():
         type=int,
         default=DEFAULT_THROUGHPUT_MBPS,
         help=f'Throughput limit in Mbps (default: {DEFAULT_THROUGHPUT_MBPS} Mbps)'
+    )
+    parser.add_argument(
+        '--log-level',
+        choices=['OFF', 'BASIC', 'TRANSFER'],
+        default=DEFAULT_LOG_LEVEL,
+        help=f'CloudWatch logging level (default: {DEFAULT_LOG_LEVEL}). OFF=no logging, BASIC=errors and basic info, TRANSFER=detailed file transfer logs'
     )
     parser.add_argument(
         '--source-role-arn',
@@ -662,7 +686,8 @@ def main():
                     dest_role_arn=task_config.get('dest_role_arn'),
                     task_name=task_config.get('task_name'),
                     output_file=args.output_file,
-                    start_task=task_config['start']
+                    start_task=task_config['start'],
+                    log_level=task_config['log_level']
                 )
                 
                 registry = add_task_to_registry(registry, task_info)
@@ -702,7 +727,8 @@ def main():
                 dest_role_arn=args.dest_role_arn,
                 task_name=args.task_name,
                 output_file=args.output_file,
-                start_task=args.start
+                start_task=args.start,
+                log_level=args.log_level
             )
             
             # Add to registry and save

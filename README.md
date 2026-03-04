@@ -40,6 +40,7 @@ This automatically:
 - `--source-region` - Source AWS region (default: me-central-1)
 - `--dest-bucket` - Destination bucket name (omit to auto-create)
 - `--throughput-mbps` - Throughput limit in Mbps (default: 250)
+- `--log-level` - CloudWatch logging level: OFF, BASIC, TRANSFER (default: BASIC)
 - `--source-role-arn` - IAM role ARN for source (omit to auto-create)
 - `--dest-role-arn` - IAM role ARN for destination (omit to auto-create)
 - `--task-name` - Friendly name for the task
@@ -73,6 +74,21 @@ python create_datasync_task.py \
     --throughput-mbps 100
 ```
 
+### Custom CloudWatch Logging
+```bash
+# Detailed transfer logs
+python create_datasync_task.py \
+    --source-bucket my-bucket \
+    --dest-region us-east-1 \
+    --log-level TRANSFER
+
+# Disable logging
+python create_datasync_task.py \
+    --source-bucket my-bucket \
+    --dest-region us-east-1 \
+    --log-level OFF
+```
+
 ### Auto-Start Task
 ```bash
 python create_datasync_task.py \
@@ -97,15 +113,15 @@ python create_datasync_task.py \
 
 **Required columns**: `source_bucket`, `dest_region`
 
-**Optional columns**: `source_region`, `dest_bucket`, `throughput_mbps`, `source_role_arn`, `dest_role_arn`, `task_name`, `start`
+**Optional columns**: `source_region`, `dest_bucket`, `throughput_mbps`, `source_role_arn`, `dest_role_arn`, `task_name`, `start`, `log_level`
 
 ### Example CSV
 
 ```csv
-source_bucket,source_region,dest_region,throughput_mbps,start
-bucket1,me-central-1,us-east-1,250,false
-bucket2,us-west-2,eu-west-1,100,true
-bucket3,ap-south-1,us-east-1,250,true
+source_bucket,source_region,dest_region,throughput_mbps,log_level,start
+bucket1,me-central-1,us-east-1,250,BASIC,false
+bucket2,us-west-2,eu-west-1,100,TRANSFER,true
+bucket3,ap-south-1,us-east-1,250,OFF,true
 ```
 
 ### Run Batch
@@ -117,6 +133,7 @@ python create_datasync_task.py --csv-file tasks.csv
 **Notes**:
 - Column names are case-insensitive
 - Boolean values: `true`, `false`, `yes`, `no`, `1`, `0`
+- Log level values: `OFF`, `BASIC`, `TRANSFER` (default: BASIC)
 - Empty `dest_bucket` auto-creates bucket
 - Tasks processed sequentially
 - Failures don't stop other tasks
@@ -165,6 +182,8 @@ python cleanup_datasync_tasks.py
    - Enhanced mode (optimal for S3-to-S3)
    - Created in destination region
    - Throughput limit applied
+   - CloudWatch logging enabled (default: BASIC level)
+   - Logs written to: `/aws/datasync` log group
    - Verify: ONLY_FILES_TRANSFERRED
    - Overwrite: ALWAYS
    - Transfer: CHANGED

@@ -1,0 +1,5 @@
+# Local task configuration files
+tasks.csv
+
+# DataSync task registry (contains account-specific ARNs)
+datasync_tasks.json
