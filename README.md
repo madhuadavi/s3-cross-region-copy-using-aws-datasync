@@ -256,14 +256,14 @@ python cleanup_datasync_tasks.py
 ## What Gets Created
 
 1. **Destination Bucket** (if omitted):
-   - Name: `{source-bucket}-{dest-region}`
+   - Name: `{source-bucket}-{dest-region}` (truncated to 63 chars)
    - Public access blocked
    - AES256 encryption enabled
    - Versioning matches source
 
 2. **IAM Roles** (if not provided):
-   - Source: `DataSyncS3Role-{bucket}-source` (read-only)
-   - Destination: `DataSyncS3Role-{bucket}-dest` (write)
+   - Source: `DataSyncS3Role-{bucket}-source` (read-only, truncated to 64 chars)
+   - Destination: `DataSyncS3Role-{bucket}-dest` (write, truncated to 64 chars)
 
 3. **DataSync Locations**:
    - Source location in source region

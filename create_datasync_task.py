@@ -45,12 +45,31 @@ DEFAULT_OUTPUT_FILE = "datasync_tasks.json"
 DEFAULT_SOURCE_REGION = "me-central-1"
 DEFAULT_LOG_LEVEL = "BASIC"
 
+# AWS service name limits
+MAX_S3_BUCKET_NAME_LENGTH = 63
+MAX_IAM_ROLE_NAME_LENGTH = 64
+
+
+def _truncate_name(name, max_length):
+    """Truncate a name to fit within max_length, stripping trailing hyphens."""
+    if len(name) <= max_length:
+        return name
+    return name[:max_length].rstrip('-')
+
 
 def generate_dest_bucket_name(source_bucket, dest_region):
-    """Generate destination bucket name based on source bucket and region."""
-    # Remove any existing region suffix
+    """Generate destination bucket name based on source bucket and region.
+    
+    S3 bucket names must be 3-63 characters. The region suffix is always
+    preserved; the base name is truncated if needed.
+    """
     base_name = source_bucket.rsplit('-', 1)[0] if '-' in source_bucket else source_bucket
-    return f"{base_name}-{dest_region}"
+    suffix = f"-{dest_region}"
+    max_base = MAX_S3_BUCKET_NAME_LENGTH - len(suffix)
+    if max_base < 3:
+        raise ValueError(f"Region suffix '{suffix}' is too long to form a valid bucket name")
+    base_name = base_name[:max_base].rstrip('-')
+    return f"{base_name}{suffix}"
 
 
 def create_destination_bucket(source_bucket, source_region, dest_region):
@@ -249,7 +268,10 @@ def validate_csv_format(file_path):
 
 def create_datasync_role(iam_client, bucket_name, role_suffix, is_source=True):
     """Create a minimally permissioned IAM role for DataSync to access a specific S3 bucket."""
-    role_name = f"DataSyncS3Role-{bucket_name}-{role_suffix}"
+    role_name = _truncate_name(
+        f"DataSyncS3Role-{bucket_name}-{role_suffix}",
+        MAX_IAM_ROLE_NAME_LENGTH,
+    )
     
     trust_policy = {
         "Version": "2012-10-17",
