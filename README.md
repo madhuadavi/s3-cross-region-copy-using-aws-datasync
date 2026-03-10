@@ -253,6 +253,68 @@ Delete all resources (buckets are never deleted):
 python cleanup_datasync_tasks.py
 ```
 
+## Cross-Account Transfers
+
+When the source and destination buckets are in different AWS accounts, run the
+prerequisite script first from the **source account**, then run the task creator
+from the **destination account**.
+
+### Step 1 — Set up the source bucket policy (source account)
+
+Log in to the source account via SSO, then grant the destination account access:
+
+```bash
+# Single bucket
+python setup_cross_account_bucket_policy.py \
+    --source-bucket my-source-bucket \
+    --dest-account-id 123456789012
+
+# All source buckets from a CSV file
+python setup_cross_account_bucket_policy.py \
+    --csv-file tasks.csv \
+    --dest-account-id 123456789012
+
+# Dry run — preview the policy without applying
+python setup_cross_account_bucket_policy.py \
+    --source-bucket my-source-bucket \
+    --dest-account-id 123456789012 \
+    --dry-run
+```
+
+### Step 2 — Create the DataSync task (destination account)
+
+Switch to the destination account via SSO, then create the task as usual:
+
+```bash
+python create_datasync_task.py \
+    --source-bucket my-source-bucket \
+    --source-region me-central-1 \
+    --dest-region us-east-1 \
+    --start
+```
+
+### Cleanup — Remove the cross-account policy (source account)
+
+Switch back to the source account and remove the policy:
+
+```bash
+python setup_cross_account_bucket_policy.py \
+    --source-bucket my-source-bucket \
+    --dest-account-id 123456789012 \
+    --remove
+```
+
+### How It Works
+
+The prerequisite script adds a scoped bucket policy on the source bucket that
+grants the DataSync IAM role in the destination account read access. The policy
+uses the same role naming convention (`DataSyncS3Role-{bucket}-source`) that
+`create_datasync_task.py` generates, so no manual ARN wiring is needed.
+
+- The policy statements use a deterministic `Sid`, making the script idempotent
+- Existing bucket policies are preserved (statements are merged, not replaced)
+- `--remove` cleanly strips only the statements added by this script
+
 ## What Gets Created
 
 1. **Destination Bucket** (if omitted):
